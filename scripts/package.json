@@ -1,0 +1,12 @@
+{
+  "name": "stock-management-scripts",
+  "version": "1.0.0",
+  "description": "Helper scripts for stock management system",
+  "scripts": {
+    "seed": "node seed-data.js",
+    "create-admin": "node create-admin-user.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}

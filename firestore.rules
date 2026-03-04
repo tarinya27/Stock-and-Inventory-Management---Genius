@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to get user role (handles missing user doc)
+    function getUserRole() {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(userPath) ? get(userPath).data.role : null;
+    }
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+    
+    // Categories collection
+    match /categories/{categoryCode} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+    
+    // Products collection - any authenticated user can manage products
+    match /products/{barcode} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+    
+    // Stock IN collection
+    match /stock_in/{id} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+    
+    // Stock OUT collection
+    match /stock_out/{id} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAuthenticated() && (userId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+    
+    // Stock balance collection (if using optimized approach with Cloud Functions)
+    match /stock_balance/{barcode} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only Cloud Functions can write
+    }
+    
+    // Reserved / pending delivery stock (for admin reports)
+    match /reserved_stock/{id} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Login logs - accountability and tracking
+    match /login_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+  }
+}

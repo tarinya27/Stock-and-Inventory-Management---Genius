@@ -30,7 +30,46 @@ This will:
 
 ---
 
-## Distribute to the Office
+## Updating All Installed Machines
+
+When you make code changes (e.g., barcode fixes, Firestore optimizations), you need to rebuild and redistribute:
+
+### Step 1: Bump the version (optional but recommended)
+
+Edit `frontend/package.json` and change the version:
+
+```json
+"version": "1.0.1"
+```
+
+This helps users know they have the latest build.
+
+### Step 2: Build the new installer
+
+```bash
+cd d:\Genius\frontend
+npm run electron-build:win
+```
+
+This creates a new installer in `frontend\dist\`.
+
+### Step 3: Distribute to machines
+
+1. Copy **Stock Management System Setup 1.0.1.exe** (or whatever version) to:
+   - USB drive
+   - Shared network folder (e.g., `\\server\share\StockApp`)
+   - Or email to each machine
+
+2. On each office PC:
+   - Close the app if it’s running
+   - Run the new installer
+   - Install over the existing version (no need to uninstall)
+
+3. Users can launch the app from the Start Menu or desktop shortcut as before.
+
+---
+
+## Distribute to the Office (First Time)
 
 1. Copy **Stock Management System Setup 1.0.0.exe** to a USB drive or shared folder
 2. On each company PC, double-click the installer
@@ -83,3 +122,81 @@ Press **F12** in the desktop app to open DevTools. Check the Console tab for err
 - Ensure internet connection
 - Check Windows Defender / antivirus isn't blocking it
 - Try "Run as administrator" for the installer
+
+---
+
+## App works on your PC but not on company PC?
+
+This is usually caused by **corporate firewall or network**.
+
+### Step 1: Find out what "not working" means
+
+On the company PC, open the app and press **F12** to open DevTools. Go to the **Console** tab. Look for red errors:
+
+| Error | What it means |
+|-------|----------------|
+| `Failed to fetch` / `net::ERR_CONNECTION_REFUSED` | Firewall blocks Firebase |
+| `Missing or insufficient permissions` | Firestore rules or Auth domain |
+| `auth/network-request-failed` | Network blocked |
+| Blank white screen | Check Console for any error |
+
+### Step 2: Test Firebase connectivity
+
+On the company PC, open **Command Prompt** and run:
+
+```cmd
+ping firebase.googleapis.com
+ping firestore.googleapis.com
+```
+
+- If both fail → **Firewall is blocking Firebase**. IT must allow these domains.
+- If both succeed → Problem is likely Auth or Firestore rules.
+
+### Step 3: Ask IT to allow these domains (if needed)
+
+Corporate firewalls often block Google. Ask IT to allow outbound HTTPS to:
+
+- `*.googleapis.com`
+- `*.firebaseio.com`
+- `*.firebaseapp.com`
+- `*.google.com`
+
+Or allow the app through the firewall (e.g., add `Stock Management System.exe` to exceptions).
+
+### Step 4: Firebase Auth – add domains
+
+1. Go to [Firebase Console](https://console.firebase.google.com) → your project
+2. **Authentication** → **Settings** → **Authorized domains**
+3. Ensure these exist:
+   - `localhost`
+   - `127.0.0.1`
+
+### Step 5: Proxy / VPN
+
+If the company uses a VPN or proxy:
+
+- Try connecting from the company PC **without** VPN first
+- If it works without VPN → VPN is blocking Firebase
+- Ask IT to allow Firebase through the proxy
+
+### Step 6: Antivirus
+
+On the company PC:
+
+- Temporarily disable antivirus and test
+- If it works → Add the app to antivirus exclusions
+
+### Step 7: Run as admin
+
+Right‑click the app → **Run as administrator**. Some corporate setups block apps by default.
+
+---
+
+**Quick checklist for company machine:**
+
+1. [ ] Internet works (check in browser)
+2. [ ] F12 → Console shows no red errors (or note the exact error)
+3. [ ] `ping firebase.googleapis.com` succeeds
+4. [ ] `localhost` is in Firebase Auth domains
+5. [ ] Antivirus not blocking the app
+6. [ ] Try "Run as administrator"

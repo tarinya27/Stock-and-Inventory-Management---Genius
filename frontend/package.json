@@ -1,6 +1,6 @@
 {
   "name": "stock-management-system",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Computer Shop Stock Management System",
   "main": "electron/main.js",
   "homepage": "./",

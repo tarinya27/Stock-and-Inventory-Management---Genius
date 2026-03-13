@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore } from 'firebase/firestore';
+import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 
 // Firebase configuration - env vars at build time, fallback for Electron desktop app
 const firebaseConfig = {
@@ -24,6 +24,15 @@ const app = initializeApp(firebaseConfig);
 // Use long-polling for better compatibility (Electron, corporate firewalls, proxies)
 // WebSockets often fail in packaged Electron apps and restricted networks
 export const db = initializeFirestore(app, { experimentalForceLongPolling: true });
+
+// Enable offline persistence to reduce reads (cached data served from IndexedDB)
+enableIndexedDbPersistence(db).catch((err) => {
+  if (err.code === 'failed-precondition') {
+    console.warn('Firestore persistence failed: multiple tabs open. Using memory cache.');
+  } else if (err.code === 'unimplemented') {
+    console.warn('Firestore persistence not supported in this browser.');
+  }
+});
 
 // Initialize Firebase services
 export const auth = getAuth(app);

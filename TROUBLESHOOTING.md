@@ -209,6 +209,29 @@ Firebase: Error (auth/user-not-found)
 3. Make sure Email/Password provider is enabled
 4. Check user document exists in Firestore `users` collection
 
+### Firestore Quota Exceeded
+
+**Error:**
+```
+RESOURCE_EXHAUSTED: Quota exceeded
+```
+
+**Solution:**
+The app has been optimized to reduce Firestore reads:
+- **Offline persistence** – Cached data served from IndexedDB
+- **Denormalized balances** – `stock_balances` collection updated on stock in/out
+- **Query limits** – Recent movements use `limit()` instead of fetching all
+- **Batch reads** – Product balances fetched in batch
+
+1. **Deploy Firestore rules** (includes `stock_balances`):
+   ```bash
+   firebase deploy --only firestore:rules
+   ```
+
+2. **First load after update** – Existing data is migrated lazily (balance computed and cached on first access). Subsequent loads use cached balances.
+
+3. **If quota still exceeded** – Wait for daily reset (midnight Pacific) or upgrade to Blaze plan in Firebase Console.
+
 ### TypeScript Errors
 
 **Error:**

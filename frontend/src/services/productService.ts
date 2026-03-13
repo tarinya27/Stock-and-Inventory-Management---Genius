@@ -1,7 +1,7 @@
 import { collection, doc, getDoc, getDocs, query, where, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Product, GroupedProduct } from '../types';
-import { getStockBalance } from './stockService';
+import { getStockBalances } from './stockService';
 
 export const getProductByBarcode = async (barcode: string): Promise<Product | null> => {
   const productDoc = await getDoc(doc(db, 'products', barcode));
@@ -58,12 +58,11 @@ const groupKey = (p: Product): string => `${p.categoryCode ?? ''}\n${p.name}`;
  */
 export const getGroupedProductsForStoreManager = async (): Promise<GroupedProduct[]> => {
   const all = await getAllProducts();
-  const withBalance = await Promise.all(
-    all.map(async (p) => {
-      const bal = await getStockBalance(p.barcode);
-      return { product: p, balance: bal };
-    })
-  );
+  const balances = await getStockBalances(all.map((p) => p.barcode));
+  const withBalance = all.map((p) => ({
+    product: p,
+    balance: balances.get(p.barcode) ?? { barcode: p.barcode, totalIn: 0, totalOut: 0, balance: 0 }
+  }));
 
   const map = new Map<string, { products: Product[]; totalIn: number; totalOut: number }>();
   for (const { product, balance } of withBalance) {

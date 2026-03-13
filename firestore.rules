@@ -49,10 +49,16 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
-    // Stock balance collection (if using optimized approach with Cloud Functions)
+    // Stock balance collection (legacy, if using Cloud Functions)
     match /stock_balance/{barcode} {
       allow read: if isAuthenticated();
       allow write: if false; // Only Cloud Functions can write
+    }
+    
+    // Denormalized stock balances (client updates on stock in/out to reduce read quota)
+    match /stock_balances/{barcode} {
+      allow read, create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
     
     // Reserved / pending delivery stock (for admin reports)

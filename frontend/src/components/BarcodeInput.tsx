@@ -1,34 +1,42 @@
-import React from 'react';
+import React, { forwardRef, useImperativeHandle } from 'react';
 import { TextField, Box } from '@mui/material';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
+
+export interface BarcodeInputHandle {
+  focus: () => void;
+}
 
 interface BarcodeInputProps {
   onScan: (barcode: string) => void;
   label?: string;
   placeholder?: string;
   fullWidth?: boolean;
+  /** Minimum barcode length to trigger scan (default 3). Use 1 for dialogs. */
+  minLength?: number;
 }
 
-export const BarcodeInput: React.FC<BarcodeInputProps> = ({
+export const BarcodeInput = forwardRef<BarcodeInputHandle, BarcodeInputProps>(function BarcodeInput({
   onScan,
   label = 'Barcode',
   placeholder = 'Scan or type barcode, then press Enter',
-  fullWidth = true
-}) => {
-  const { barcode, setBarcode, handleKeyDown, inputRef } = useBarcodeScanner({
+  fullWidth = true,
+  minLength = 3
+}, ref) {
+  const { handleKeyDown, inputRef, focus } = useBarcodeScanner({
     onScan,
-    minLength: 8
+    minLength
   });
 
+  useImperativeHandle(ref, () => ({ focus }), [focus]);
+
   return (
-    <Box>
+    <Box data-barcode-input>
       <TextField
         inputRef={inputRef}
         fullWidth={fullWidth}
         label={label}
         placeholder={placeholder}
-        value={barcode}
-        onChange={(e) => setBarcode(e.target.value)}
+        defaultValue=""
         onKeyDown={handleKeyDown}
         autoFocus
         variant="outlined"
@@ -48,4 +56,4 @@ export const BarcodeInput: React.FC<BarcodeInputProps> = ({
       />
     </Box>
   );
-};
+});

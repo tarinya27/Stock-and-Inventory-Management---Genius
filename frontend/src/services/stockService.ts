@@ -1,12 +1,17 @@
 import {
   collection,
+  doc,
+  getDoc,
+  getDocs,
   query,
   where,
-  getDocs,
   addDoc,
+  setDoc,
   serverTimestamp,
   Timestamp,
-  orderBy
+  orderBy,
+  limit,
+  increment
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Product, StockIn, StockOut, StockBalance, StockMovement } from '../types';
@@ -37,18 +42,56 @@ export const getTotalStockOut = async (barcode: string): Promise<number> => {
   }, 0);
 };
 
-// Get stock balance for a product (total IN – total OUT)
+// Get stock balance for a product (reads from stock_balances; falls back to calculation for legacy data)
 export const getStockBalance = async (barcode: string): Promise<StockBalance> => {
+  const balRef = doc(db, 'stock_balances', barcode);
+  const balSnap = await getDoc(balRef);
+  if (balSnap.exists()) {
+    const d = balSnap.data();
+    return {
+      barcode,
+      totalIn: d?.totalIn ?? 0,
+      totalOut: d?.totalOut ?? 0,
+      balance: d?.balance ?? 0
+    };
+  }
+  // Legacy: calculate from stock_in/stock_out and cache in stock_balances
   const [totalIn, totalOut] = await Promise.all([
     getTotalStockIn(barcode),
     getTotalStockOut(barcode)
   ]);
-  return {
-    barcode,
-    totalIn,
-    totalOut,
-    balance: totalIn - totalOut
-  };
+  const balance = totalIn - totalOut;
+  await setDoc(balRef, { totalIn, totalOut, balance }, { merge: true });
+  return { barcode, totalIn, totalOut, balance };
+};
+
+/** Batch fetch stock balances (1 read per barcode from stock_balances; falls back per missing doc) */
+export const getStockBalances = async (barcodes: string[]): Promise<Map<string, StockBalance>> => {
+  const result = new Map<string, StockBalance>();
+  const missing: string[] = [];
+  const docs = await Promise.all(barcodes.map((b) => getDoc(doc(db, 'stock_balances', b))));
+  docs.forEach((snap, i) => {
+    const barcode = barcodes[i];
+    if (snap.exists()) {
+      const d = snap.data();
+      result.set(barcode, {
+        barcode,
+        totalIn: d?.totalIn ?? 0,
+        totalOut: d?.totalOut ?? 0,
+        balance: d?.balance ?? 0
+      });
+    } else {
+      missing.push(barcode);
+    }
+  });
+  // Lazy migration for missing docs
+  await Promise.all(
+    missing.map(async (barcode) => {
+      const bal = await getStockBalance(barcode);
+      result.set(barcode, bal);
+    })
+  );
+  return result;
 };
 
 // Check if barcode already used for stock-in (each barcode = 1 unit, used at most once)
@@ -117,6 +160,9 @@ export const addStockIn = async (
   };
   
   await addDoc(collection(db, 'stock_in'), stockInData);
+  // Update denormalized balance (reduces read quota for getStockBalance)
+  const balRef = doc(db, 'stock_balances', barcode);
+  await setDoc(balRef, { totalIn: increment(qty), totalOut: increment(0), balance: increment(qty) }, { merge: true });
 };
 
 // Add stock OUT (1 unit per barcode; prevents duplicate)
@@ -152,13 +198,17 @@ export const addStockOut = async (
   };
   
   await addDoc(collection(db, 'stock_out'), stockOutData);
+  // Update denormalized balance (reduces read quota for getStockBalance)
+  const balRef = doc(db, 'stock_balances', barcode);
+  await setDoc(balRef, { totalIn: increment(0), totalOut: increment(qty), balance: increment(-qty) }, { merge: true });
 };
 
-// Get stock movements (for reports)
+// Get stock movements (for reports). Use limitCount when fetching "recent" only (no date/barcode filter).
 export const getStockMovements = async (
   startDate?: Date,
   endDate?: Date,
-  barcode?: string
+  barcode?: string,
+  limitCount?: number
 ): Promise<StockMovement[]> => {
   const movements: StockMovement[] = [];
   
@@ -171,15 +221,16 @@ export const getStockMovements = async (
       where('barcode', '==', barcode),
       orderBy('date', 'desc')
     );
-  }
-  
-  if (startDate && endDate) {
+  } else if (startDate && endDate) {
     stockInQuery = query(
       collection(db, 'stock_in'),
       where('date', '>=', Timestamp.fromDate(startDate)),
       where('date', '<=', Timestamp.fromDate(endDate)),
       orderBy('date', 'desc')
     );
+  }
+  if (limitCount != null && !startDate && !barcode) {
+    stockInQuery = query(stockInQuery, limit(limitCount));
   }
   
   const stockInSnapshot = await getDocs(stockInQuery);
@@ -206,15 +257,16 @@ export const getStockMovements = async (
       where('barcode', '==', barcode),
       orderBy('date', 'desc')
     );
-  }
-  
-  if (startDate && endDate) {
+  } else if (startDate && endDate) {
     stockOutQuery = query(
       collection(db, 'stock_out'),
       where('date', '>=', Timestamp.fromDate(startDate)),
       where('date', '<=', Timestamp.fromDate(endDate)),
       orderBy('date', 'desc')
     );
+  }
+  if (limitCount != null && !startDate && !barcode) {
+    stockOutQuery = query(stockOutQuery, limit(limitCount));
   }
   
   const stockOutSnapshot = await getDocs(stockOutQuery);
@@ -241,9 +293,9 @@ export const getStockMovements = async (
   });
 };
 
-// Get recent stock movements (for dashboard)
+// Get recent stock movements (for dashboard) - uses limit in query to avoid fetching all docs
 export const getRecentMovements = async (limitCount: number = 10): Promise<StockMovement[]> => {
-  const movements = await getStockMovements();
+  const movements = await getStockMovements(undefined, undefined, undefined, limitCount * 2);
   return movements.slice(0, limitCount);
 };
 
@@ -258,18 +310,18 @@ export const getTodayStockTotals = async (): Promise<{ todayIn: number; todayOut
   return { todayIn, todayOut };
 };
 
-// Get low stock products
+// Get low stock products (uses batch getStockBalances to reduce reads)
 export const getLowStockProducts = async (): Promise<Array<Product & { balance: number }>> => {
   const { getAllProducts } = await import('./productService');
   const products = await getAllProducts();
+  const balances = await getStockBalances(products.map((p) => p.barcode));
   const lowStockProducts: Array<Product & { balance: number }> = [];
-  
   for (const product of products) {
-    const balance = await getStockBalance(product.barcode);
-    if (balance.balance < product.lowStockThreshold) {
-      lowStockProducts.push({ ...product, balance: balance.balance });
+    const bal = balances.get(product.barcode);
+    const balanceVal = bal?.balance ?? 0;
+    if (balanceVal < product.lowStockThreshold) {
+      lowStockProducts.push({ ...product, balance: balanceVal });
     }
   }
-  
   return lowStockProducts;
 };

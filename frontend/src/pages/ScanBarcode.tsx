@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Container,
   Paper,
@@ -22,7 +22,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { useNavigate } from 'react-router-dom';
-import { BarcodeInput } from '../components/BarcodeInput';
+import { BarcodeInput, type BarcodeInputHandle } from '../components/BarcodeInput';
 import { getProductByBarcode, getGroupedProductByName } from '../services/productService';
 import {
   getStockBalance,
@@ -66,6 +66,7 @@ export const ScanBarcode: React.FC = () => {
   const [soldDate, setSoldDate] = useState<Date | null>(null);
   const [productNameInput, setProductNameInput] = useState('');
   const [lookedUpByName, setLookedUpByName] = useState(false);
+  const stockOutBarcodeRef = useRef<BarcodeInputHandle>(null);
 
   const handleScan = async (barcode: string) => {
     setLoading(true);
@@ -508,6 +509,16 @@ export const ScanBarcode: React.FC = () => {
                 {error}
               </Alert>
             )}
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Scan barcode to confirm product or switch to another
+              </Typography>
+              <BarcodeInput
+                onScan={handleScan}
+                label="Barcode"
+                placeholder="Scan barcode here"
+              />
+            </Box>
             <TextField
               fullWidth
               label="Quantity"
@@ -554,6 +565,12 @@ export const ScanBarcode: React.FC = () => {
           }}
           maxWidth="sm"
           fullWidth
+          disableAutoFocus
+          TransitionProps={{
+            onEntered: () => {
+              setTimeout(() => stockOutBarcodeRef.current?.focus(), 150);
+            }
+          }}
         >
           <DialogTitle>Stock Out</DialogTitle>
           <DialogContent>
@@ -562,6 +579,18 @@ export const ScanBarcode: React.FC = () => {
                 {error}
               </Alert>
             )}
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Scan barcode to confirm product or switch to another
+              </Typography>
+              <BarcodeInput
+                ref={stockOutBarcodeRef}
+                onScan={handleScan}
+                label="Barcode"
+                placeholder="Scan barcode here"
+                minLength={1}
+              />
+            </Box>
             {product && stockBalance && (
               <>
                 <Typography sx={{ mb: 2 }}>

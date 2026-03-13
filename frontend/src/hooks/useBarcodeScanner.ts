@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface UseBarcodeScannerOptions {
   onScan: (barcode: string) => void;
@@ -7,38 +7,31 @@ interface UseBarcodeScannerOptions {
 
 export const useBarcodeScanner = ({
   onScan,
-  minLength = 8
+  minLength = 1
 }: UseBarcodeScannerOptions) => {
-  const [barcode, setBarcode] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Auto-focus on mount
     inputRef.current?.focus();
   }, []);
-
-  const handleBarcodeInput = (value: string) => {
-    setBarcode(value);
-    // No debounce auto-submit: only submit on Enter key.
-    // This allows typing full barcode (e.g. 111222333) without triggering too early.
-    // Barcode scanners send Enter after the code, so they still work.
-  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const trimmedBarcode = barcode.trim();
+      // Read from DOM - scanners send keys so fast that React state may not have updated yet.
+      // Uncontrolled input or direct DOM read ensures we get the full barcode (e.g. 5-digit).
+      const el = (e.target as HTMLInputElement) ?? inputRef.current;
+      const raw = el?.value ?? '';
+      const trimmedBarcode = String(raw).trim();
       if (trimmedBarcode.length >= minLength) {
         onScan(trimmedBarcode);
-        setBarcode('');
+        if (el) el.value = '';
         setTimeout(() => inputRef.current?.focus(), 50);
       }
     }
   };
 
   return {
-    barcode,
-    setBarcode: handleBarcodeInput,
     handleKeyDown,
     inputRef,
     focus: () => inputRef.current?.focus()
